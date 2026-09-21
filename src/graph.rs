@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::module::Module;
+use crate::parser;
 use crate::resolver;
 
 #[derive(Debug)]
@@ -24,7 +25,6 @@ impl ModuleGraph {
     fn visit(&mut self, path: &Path) -> Result<(), String> {
         let id = path.to_string_lossy().to_string();
 
-        // قبلاً این module را دیده‌ایم.
         if self.modules.contains_key(&id) {
             return Ok(());
         }
@@ -32,13 +32,15 @@ impl ModuleGraph {
         let source = fs::read_to_string(path)
             .map_err(|error| format!("Failed to read '{}': {error}", path.display()))?;
 
-        let module = Module::new(id.clone(), source);
+        let dependencies = parser::parse(&source, &id)?;
 
-        for dependency in &module.dependencies {
+        for dependency in &dependencies {
             let resolved = resolver::resolve(path, dependency)?;
 
             self.visit(&resolved)?;
         }
+
+        let module = Module::new(id.clone(), source, dependencies);
 
         self.modules.insert(id, module);
 
