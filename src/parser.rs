@@ -3,6 +3,11 @@ use oxc_ast::ast::Statement;
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 
+pub struct ParsedModule<'a> {
+    pub dependencies: Vec<String>,
+    pub statements: Vec<&'a Statement<'a>>,
+}
+
 pub fn parse(source: &str, filename: &str) -> Result<Vec<String>, String> {
     let allocator = Allocator::default();
 
