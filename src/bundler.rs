@@ -9,6 +9,18 @@ pub fn bundle(input: &str) -> Result<String, String> {
 
     graph.build(&entry)?;
 
+    println!("Graph built successfully!");
+    println!("Module count: {}", graph.modules.len());
+
+    // Temporary debug output
+    for (id, module) in &graph.modules {
+        println!("Module: {id}");
+
+        for dependency in &module.dependencies {
+            println!("  {} -> {}", dependency.request, dependency.resolved_id);
+        }
+    }
+
     generate_bundle(&graph, &entry)
 }
 

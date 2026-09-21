@@ -23,7 +23,7 @@ impl ModuleGraph {
     }
 
     fn visit(&mut self, path: &Path) -> Result<(), String> {
-        let id = path.to_string_lossy().to_string();
+        let id = Self::module_id(path);
 
         if self.modules.contains_key(&id) {
             return Ok(());
@@ -32,12 +32,21 @@ impl ModuleGraph {
         let source = fs::read_to_string(path)
             .map_err(|error| format!("Failed to read '{}': {error}", path.display()))?;
 
-        let dependencies = parser::parse(&source, &id)?;
+        let imports = parser::parse(&source, &id)?;
 
-        for dependency in &dependencies {
-            let resolved = resolver::resolve(path, dependency)?;
+        let mut dependencies = Vec::new();
+
+        for import in imports {
+            let resolved = resolver::resolve(path, &import)?;
+
+            let resolved_id = Self::module_id(&resolved);
 
             self.visit(&resolved)?;
+
+            dependencies.push(crate::module::Dependency {
+                request: import,
+                resolved_id,
+            });
         }
 
         let module = Module::new(id.clone(), source, dependencies);
@@ -45,5 +54,16 @@ impl ModuleGraph {
         self.modules.insert(id, module);
 
         Ok(())
+    }
+    fn module_id(path: &Path) -> String {
+        let absolute = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .expect("Failed to get current directory")
+                .join(path)
+        };
+
+        absolute.to_string_lossy().replace('\\', "/")
     }
 }

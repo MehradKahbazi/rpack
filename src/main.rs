@@ -21,10 +21,7 @@ fn run() -> Result<(), String> {
         .get(1)
         .ok_or_else(|| "Missing input file".to_string())?;
 
-    let source =
-        fs::read_to_string(input).map_err(|error| format!("Failed to read '{input}': {error}"))?;
-
-    parser::parse(&source, input)?;
+    let source = bundler::bundle(input)?;
 
     Ok(())
 }

@@ -10,6 +10,10 @@ pub fn resolve(importer: &Path, dependency: &str) -> Result<PathBuf, String> {
 
     let requested = importer_dir.join(dependency);
 
+    let requested = requested
+        .canonicalize()
+        .map_err(|error| format!("Failed to resolve '{}': {error}", requested.display()))?;
+
     if requested.exists() && requested.is_file() {
         return Ok(requested);
     }

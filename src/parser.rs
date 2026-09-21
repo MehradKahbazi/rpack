@@ -23,7 +23,13 @@ pub fn parse(source: &str, filename: &str) -> Result<Vec<String>, String> {
     for statement in &result.program.body {
         match statement {
             Statement::ImportDeclaration(import) => {
+                println!("IMPORT: {}", import.source.value);
+
                 dependencies.push(import.source.value.to_string());
+            }
+
+            Statement::ExportNamedDeclaration(export) => {
+                println!("EXPORT: {:?}", export);
             }
 
             _ => {}
