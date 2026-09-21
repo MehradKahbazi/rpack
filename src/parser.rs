@@ -19,17 +19,19 @@ pub fn parse(source: &str, filename: &str) -> Result<Vec<String>, String> {
     }
 
     let mut dependencies = Vec::new();
+    println!("PARSER RUNNING: {filename}");
 
     for statement in &result.program.body {
+        println!("STATEMENT: {:?}", statement);
+
         match statement {
             Statement::ImportDeclaration(import) => {
                 println!("IMPORT: {}", import.source.value);
-
                 dependencies.push(import.source.value.to_string());
             }
 
-            Statement::ExportNamedDeclaration(export) => {
-                println!("EXPORT: {:?}", export);
+            Statement::ExportDeclaration(export) => {
+                println!("EXPORT FOUND: {:?}", export);
             }
 
             _ => {}
