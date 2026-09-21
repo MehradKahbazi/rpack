@@ -1,3 +1,5 @@
-const message = "Hello from JavaScript!";
+import { add } from "./math.js";
 
-console.log(message);
+const result = add(10, 20);
+
+console.log(result);
