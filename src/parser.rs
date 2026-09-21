@@ -27,16 +27,16 @@ pub fn parse(source: &str, filename: &str) -> Result<Vec<String>, String> {
     println!("PARSER RUNNING: {filename}");
 
     for statement in &result.program.body {
-        println!("STATEMENT: {:?}", statement);
+        // println!("STATEMENT: {:?}", statement);
 
         match statement {
             Statement::ImportDeclaration(import) => {
-                println!("IMPORT: {}", import.source.value);
+                // println!("IMPORT: {}", import.source.value);
                 dependencies.push(import.source.value.to_string());
             }
 
             Statement::ExportDeclaration(export) => {
-                println!("EXPORT FOUND: {:?}", export);
+                // println!("EXPORT FOUND: {:?}", export);
             }
 
             _ => {}
