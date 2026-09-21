@@ -24,6 +24,7 @@ impl ModuleGraph {
     fn visit(&mut self, path: &Path) -> Result<(), String> {
         let id = path.to_string_lossy().to_string();
 
+        // قبلاً این module را دیده‌ایم.
         if self.modules.contains_key(&id) {
             return Ok(());
         }

@@ -19,9 +19,9 @@ fn run() -> Result<(), String> {
         .get(1)
         .ok_or_else(|| "Missing input file".to_string())?;
 
-    let source = bundler::bundle(input)?;
+    let bundle = bundler::bundle(input)?;
 
-    println!("{source}");
+    println!("{bundle}");
 
     Ok(())
 }

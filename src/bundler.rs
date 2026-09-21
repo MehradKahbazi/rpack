@@ -9,7 +9,34 @@ pub fn bundle(input: &str) -> Result<String, String> {
 
     graph.build(&entry)?;
 
-    println!("{graph:#?}");
+    generate_bundle(&graph, &entry)
+}
 
-    Ok(String::from("Bundle generated successfully"))
+fn generate_bundle(graph: &ModuleGraph, entry: &PathBuf) -> Result<String, String> {
+    let mut output = String::new();
+
+    output.push_str("(function() {\n");
+    output.push_str("  const modules = {\n");
+
+    for (id, module) in &graph.modules {
+        output.push_str(&format!(
+            "    {:?}: function(module, exports, require) {{\n",
+            id
+        ));
+
+        for line in module.source.lines() {
+            output.push_str("      ");
+            output.push_str(line);
+            output.push('\n');
+        }
+
+        output.push_str("    },\n");
+    }
+
+    output.push_str("  };\n");
+    output.push_str("})();\n");
+
+    println!("Entry: {}", entry.display());
+
+    Ok(output)
 }
