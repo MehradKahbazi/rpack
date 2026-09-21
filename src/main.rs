@@ -1,8 +1,10 @@
 use std::env;
+use std::fs;
 
 mod bundler;
 mod graph;
 mod module;
+mod parser;
 mod resolver;
 
 fn main() {
@@ -19,9 +21,10 @@ fn run() -> Result<(), String> {
         .get(1)
         .ok_or_else(|| "Missing input file".to_string())?;
 
-    let bundle = bundler::bundle(input)?;
+    let source =
+        fs::read_to_string(input).map_err(|error| format!("Failed to read '{input}': {error}"))?;
 
-    println!("{bundle}");
+    parser::parse(&source, input)?;
 
     Ok(())
 }
