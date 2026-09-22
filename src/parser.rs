@@ -1,11 +1,17 @@
 use oxc_allocator::Allocator;
-use oxc_ast::ast::{Declaration, Statement};
+use oxc_ast::ast::{Declaration, ImportDeclarationSpecifier, Statement};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 
 #[derive(Debug)]
+pub struct ImportInfo {
+    pub source: String,
+    pub named: Vec<String>,
+}
+
+#[derive(Debug)]
 pub struct ParseResult {
-    pub imports: Vec<String>,
+    pub imports: Vec<ImportInfo>,
     pub exports: Vec<String>,
 }
 
@@ -30,7 +36,24 @@ pub fn parse(source: &str, filename: &str) -> Result<ParseResult, String> {
     for statement in &result.program.body {
         match statement {
             Statement::ImportDeclaration(import) => {
-                imports.push(import.source.value.to_string());
+                let mut named = Vec::new();
+
+                for specifiers in import.specifiers.iter() {
+                    for specifier in specifiers.iter() {
+                        match specifier {
+                            ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
+                                named.push(specifier.imported.name().to_string());
+                            }
+
+                            _ => {}
+                        }
+                    }
+                }
+
+                imports.push(ImportInfo {
+                    source: import.source.value.to_string(),
+                    named,
+                });
             }
 
             Statement::ExportDeclaration(export) => {
