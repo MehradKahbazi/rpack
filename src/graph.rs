@@ -34,11 +34,11 @@ impl ModuleGraph {
         let source = fs::read_to_string(path)
             .map_err(|error| format!("Failed to read '{}': {error}", path.display()))?;
 
-        let imports = parser::parse(&source, &id)?;
+        let parsed = parser::parse(&source, &id)?;
 
         let mut dependencies = Vec::new();
 
-        for import in imports {
+        for import in parsed.imports {
             let resolved = resolver::resolve(path, &import)?;
 
             let resolved_id = utils::module_id(&resolved);
@@ -53,7 +53,14 @@ impl ModuleGraph {
 
         let transformed_source = transform::transform(&source, &id, &dependencies)?;
 
-        let module = Module::new(id.clone(), source, transformed_source, dependencies);
+        let module = Module::new(
+            id.clone(),
+            source,
+            transformed_source,
+            dependencies,
+            parsed.exports,
+        );
+
         self.modules.insert(id, module);
 
         Ok(())
