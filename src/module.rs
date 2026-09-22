@@ -10,6 +10,7 @@ pub struct Module {
     pub source: String,
     pub transformed_source: String,
     pub dependencies: Vec<Dependency>,
+    pub exports: Vec<String>,
 }
 
 impl Module {
@@ -18,12 +19,14 @@ impl Module {
         source: String,
         transformed_source: String,
         dependencies: Vec<Dependency>,
+        exports: Vec<String>,
     ) -> Self {
         Self {
             id,
             source,
             transformed_source,
             dependencies,
+            exports,
         }
     }
 }
