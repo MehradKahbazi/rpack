@@ -8,6 +8,7 @@ mod module;
 mod parser;
 mod resolver;
 mod transform;
+mod utils;
 
 fn main() {
     if let Err(error) = run() {

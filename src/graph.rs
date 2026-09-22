@@ -6,6 +6,7 @@ use crate::module::Module;
 use crate::parser;
 use crate::resolver;
 use crate::transform;
+use crate::utils;
 
 #[derive(Debug)]
 pub struct ModuleGraph {
@@ -24,7 +25,7 @@ impl ModuleGraph {
     }
 
     fn visit(&mut self, path: &Path) -> Result<(), String> {
-        let id = Self::module_id(path);
+        let id = utils::module_id(path);
 
         if self.modules.contains_key(&id) {
             return Ok(());
@@ -40,7 +41,7 @@ impl ModuleGraph {
         for import in imports {
             let resolved = resolver::resolve(path, &import)?;
 
-            let resolved_id = Self::module_id(&resolved);
+            let resolved_id = utils::module_id(&resolved);
 
             self.visit(&resolved)?;
 
@@ -56,22 +57,5 @@ impl ModuleGraph {
         self.modules.insert(id, module);
 
         Ok(())
-    }
-    fn module_id(path: &Path) -> String {
-        let absolute = if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            std::env::current_dir()
-                .expect("Failed to get current directory")
-                .join(path)
-        };
-
-        let mut id = absolute.to_string_lossy().replace('\\', "/");
-
-        if let Some(stripped) = id.strip_prefix("//?/") {
-            id = stripped.to_string();
-        }
-
-        id
     }
 }

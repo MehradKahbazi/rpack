@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::graph::ModuleGraph;
+use crate::utils;
 
 pub fn bundle(input: &str) -> Result<String, String> {
     let entry = PathBuf::from(input);
@@ -83,30 +84,11 @@ fn generate_bundle(graph: &ModuleGraph, entry: &PathBuf) -> Result<String, Strin
     // Execute entry
     // -------------------------
 
-    let entry_id = module_id(entry);
+    let entry_id = utils::module_id(entry);
 
     output.push_str(&format!("  require({:?});\n", entry_id));
 
     output.push_str("})();\n");
 
     Ok(output)
-}
-
-fn module_id(path: &Path) -> String {
-    let absolute = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir()
-            .expect("Failed to get current directory")
-            .join(path)
-    };
-
-    let mut id = absolute.to_string_lossy().replace('\\', "/");
-
-    // Windows verbatim path prefix
-    if let Some(stripped) = id.strip_prefix("//?/") {
-        id = stripped.to_string();
-    }
-
-    id
 }
