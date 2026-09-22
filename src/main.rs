@@ -14,19 +14,21 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
+    println!("RUN STARTED");
+
     let args: Vec<String> = env::args().collect();
 
     let input = args
         .get(1)
         .ok_or_else(|| "Missing input file".to_string())?;
 
+    println!("Input: {input}");
+
     let source = bundler::bundle(input)?;
-    let source = std::fs::read_to_string(input)
-        .map_err(|error| format!("Failed to read '{input}': {error}"))?;
 
-    let transformed = transform::transform(&source, input)?;
+    println!("BUNDLE RETURNED");
 
-    println!("TRANSFORMED:");
-    println!("{transformed}");
+    println!("{source}");
+
     Ok(())
 }

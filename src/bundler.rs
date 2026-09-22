@@ -36,7 +36,7 @@ fn generate_bundle(graph: &ModuleGraph, entry: &PathBuf) -> Result<String, Strin
             id
         ));
 
-        for line in module.source.lines() {
+        for line in module.transformed_source.lines() {
             output.push_str("      ");
             output.push_str(line);
             output.push('\n');
