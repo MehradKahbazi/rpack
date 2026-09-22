@@ -51,9 +51,15 @@ impl ModuleGraph {
         let parsed = parser::parse(&source, &id)?;
 
         let mut dependencies = Vec::new();
+        let mut exports = parsed.exports;
+
+        // ---------------------------------------------------------
+        // Regular imports
+        // ---------------------------------------------------------
 
         for import in &parsed.imports {
             let resolved = resolver::resolve(path, &import.source)?;
+
             let resolved_id = utils::module_id(&resolved);
 
             self.visit(&resolved)?;
@@ -62,17 +68,11 @@ impl ModuleGraph {
                 format!("Resolved module '{}' was not added to graph", resolved_id)
             })?;
 
-            // Validate named imports.
             for imported_name in &import.named {
-                let exists = dependency.exports.iter().any(|export| {
-                    matches!(
-                        export,
-                        Export::Named {
-                            exported,
-                            ..
-                        } if exported == imported_name
-                    )
-                });
+                let exists = dependency
+                    .exports
+                    .iter()
+                    .any(|export| export_name(export) == Some(imported_name.as_str()));
 
                 if !exists {
                     return Err(format!(
@@ -82,7 +82,6 @@ impl ModuleGraph {
                 }
             }
 
-            // Validate default import.
             if import.default.is_some() {
                 let has_default = dependency
                     .exports
@@ -103,6 +102,116 @@ impl ModuleGraph {
             });
         }
 
+        // ---------------------------------------------------------
+        // Re-exports
+        // ---------------------------------------------------------
+
+        for re_export in &parsed.re_exports {
+            match re_export {
+                parser::ReExport::Named {
+                    source,
+                    imported,
+                    exported,
+                } => {
+                    let resolved = resolver::resolve(path, source)?;
+
+                    let resolved_id = utils::module_id(&resolved);
+
+                    self.visit(&resolved)?;
+
+                    let dependency = self.modules.get(&resolved_id).ok_or_else(|| {
+                        format!("Resolved module '{}' was not added to graph", resolved_id)
+                    })?;
+
+                    let exists = dependency
+                        .exports
+                        .iter()
+                        .any(|export| export_name(export) == Some(imported.as_str()));
+
+                    if !exists {
+                        return Err(format!(
+                            "Module '{}' does not export '{}'",
+                            source, imported
+                        ));
+                    }
+
+                    exports.push(Export::ReExport {
+                        imported: imported.clone(),
+                        exported: exported.clone(),
+                        source: source.clone(),
+                        resolved_id: resolved_id.clone(),
+                    });
+
+                    dependencies.push(crate::module::Dependency {
+                        request: source.clone(),
+                        resolved_id,
+                    });
+                }
+
+                parser::ReExport::Namespace { source } => {
+                    let resolved = resolver::resolve(path, source)?;
+
+                    let resolved_id = utils::module_id(&resolved);
+
+                    self.visit(&resolved)?;
+
+                    let dependency = self.modules.get(&resolved_id).ok_or_else(|| {
+                        format!("Resolved module '{}' was not added to graph", resolved_id)
+                    })?;
+
+                    // `export * from "./module.js"` re-exports all
+                    // named exports of the dependency.
+                    //
+                    // The default export is intentionally excluded.
+                    for export in &dependency.exports {
+                        match export {
+                            Export::Named { exported, .. } => {
+                                if !exports.iter().any(|existing| {
+                                    export_name(existing) == Some(exported.as_str())
+                                }) {
+                                    exports.push(Export::ReExport {
+                                        imported: exported.clone(),
+                                        exported: exported.clone(),
+                                        source: source.clone(),
+                                        resolved_id: resolved_id.clone(),
+                                    });
+                                }
+                            }
+
+                            Export::ReExport {
+                                imported, exported, ..
+                            } => {
+                                if !exports.iter().any(|existing| {
+                                    export_name(existing) == Some(exported.as_str())
+                                }) {
+                                    exports.push(Export::ReExport {
+                                        imported: imported.clone(),
+                                        exported: exported.clone(),
+                                        source: source.clone(),
+                                        resolved_id: resolved_id.clone(),
+                                    });
+                                }
+                            }
+
+                            Export::NamespaceReExport { .. } => {
+                                // Nested namespace re-exports will be handled
+                                // when we improve export resolution.
+                            }
+
+                            Export::Default(_) => {
+                                // `export *` does not re-export default.
+                            }
+                        }
+                    }
+
+                    dependencies.push(crate::module::Dependency {
+                        request: source.clone(),
+                        resolved_id,
+                    });
+                }
+            }
+        }
+
         let transformed_source = transform::transform(&source, &id, &dependencies)?;
 
         let module = Module::new(
@@ -110,12 +219,25 @@ impl ModuleGraph {
             source,
             transformed_source,
             dependencies,
-            parsed.exports,
+            exports,
         );
 
         self.modules.insert(id.clone(), module);
+
         self.states.insert(id, ModuleState::Visited);
 
         Ok(())
+    }
+}
+
+fn export_name(export: &Export) -> Option<&str> {
+    match export {
+        Export::Named { exported, .. } => Some(exported.as_str()),
+
+        Export::Default(_) => Some("default"),
+
+        Export::ReExport { exported, .. } => Some(exported.as_str()),
+
+        Export::NamespaceReExport { .. } => None,
     }
 }
