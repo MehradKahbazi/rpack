@@ -1,12 +1,14 @@
 use oxc_allocator::Allocator;
-use oxc_ast::ast::{Declaration, ImportDeclaration, Statement};
+use oxc_ast::ast::{ImportDeclaration, Statement};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
+
+use crate::module::Dependency;
 
 pub fn transform(
     source: &str,
     filename: &str,
-    dependencies: &[crate::module::Dependency],
+    dependencies: &[Dependency],
 ) -> Result<String, String> {
     let allocator = Allocator::default();
 
@@ -27,61 +29,21 @@ pub fn transform(
     for statement in &result.program.body {
         match statement {
             Statement::ImportDeclaration(import) => {
-                output.push_str(&transform_import(import, dependencies)?);
+                let transformed = transform_import(import, dependencies)?;
 
-                output.push('\n');
+                if !transformed.is_empty() {
+                    output.push_str(&transformed);
+                    output.push('\n');
+                }
             }
 
-            Statement::ExportDeclaration(export) => match &export.declaration {
-                Declaration::FunctionDeclaration(function) => {
-                    let function_name = function
-                        .id
-                        .as_ref()
-                        .ok_or_else(|| "Exported function has no name".to_string())?;
+            Statement::ExportNamedDeclaration(export) => {
+                transform_named_export(source, export, &mut output)?;
+            }
 
-                    println!("Transforming exported function: {}", function_name.name);
-
-                    let start = function.span.start as usize;
-                    let end = function.span.end as usize;
-
-                    let function_source = &source[start..end];
-
-                    output.push_str(function_source);
-                    output.push_str("\n\n");
-
-                    output.push_str(&format!(
-                        "exports.{} = {};\n",
-                        function_name.name, function_name.name
-                    ));
-                }
-
-                _ => {
-                    return Err("Unsupported export declaration".to_string());
-                }
-            },
-
-            Statement::ExportDefaultDeclaration(export) => match &export.declaration {
-                oxc_ast::ast::ExportDefaultDeclarationKind::FunctionDeclaration(function) => {
-                    let function_name = function.id.as_ref().ok_or_else(|| {
-                        "Anonymous default functions are not supported yet".to_string()
-                    })?;
-
-                    let start = function.span.start as usize;
-
-                    let end = function.span.end as usize;
-
-                    let function_source = &source[start..end];
-
-                    output.push_str(function_source);
-                    output.push_str("\n\n");
-
-                    output.push_str(&format!("exports.default = {};\n", function_name.name));
-                }
-
-                _ => {
-                    return Err("Unsupported default export".to_string());
-                }
-            },
+            Statement::ExportDefaultDeclaration(export) => {
+                transform_default_export(source, export, &mut output)?;
+            }
 
             Statement::VariableDeclaration(declaration) => {
                 let start = declaration.span.start as usize;
@@ -99,6 +61,22 @@ pub fn transform(
                 output.push('\n');
             }
 
+            Statement::FunctionDeclaration(function) => {
+                let start = function.span.start as usize;
+                let end = function.span.end as usize;
+
+                output.push_str(&source[start..end]);
+                output.push('\n');
+            }
+
+            Statement::ClassDeclaration(class) => {
+                let start = class.span.start as usize;
+                let end = class.span.end as usize;
+
+                output.push_str(&source[start..end]);
+                output.push('\n');
+            }
+
             _ => {
                 println!("Skipping unsupported statement");
             }
@@ -110,7 +88,7 @@ pub fn transform(
 
 fn transform_import(
     import: &ImportDeclaration,
-    dependencies: &[crate::module::Dependency],
+    dependencies: &[Dependency],
 ) -> Result<String, String> {
     let source = import.source.value.to_string();
 
@@ -119,18 +97,24 @@ fn transform_import(
         .find(|dependency| dependency.request == source)
         .ok_or_else(|| format!("Dependency '{}' was not resolved", source))?;
 
+    // import "./setup.js";
+    //
+    // becomes:
+    //
+    // require("./setup.js");
+    if import.specifiers.is_none() {
+        return Ok(format!("require({:?});", dependency.resolved_id));
+    }
+
     let mut named_bindings = Vec::new();
     let mut default_binding = None;
 
-    for specifiers in import.specifiers.iter() {
+    if let Some(specifiers) = &import.specifiers {
         for specifier in specifiers.iter() {
             match specifier {
                 oxc_ast::ast::ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
                     let imported = specifier.imported.name();
-
                     let local = specifier.local.name;
-
-                    println!("Transforming named import: {} as {}", imported, local);
 
                     if imported == local {
                         named_bindings.push(imported.to_string());
@@ -142,15 +126,11 @@ fn transform_import(
                 oxc_ast::ast::ImportDeclarationSpecifier::ImportDefaultSpecifier(specifier) => {
                     let local = specifier.local.name;
 
-                    println!("Transforming default import: {}", local);
-
                     default_binding = Some(local.to_string());
                 }
 
                 oxc_ast::ast::ImportDeclarationSpecifier::ImportNamespaceSpecifier(specifier) => {
                     let local = specifier.local.name;
-
-                    println!("Transforming namespace import: {}", local);
 
                     return Ok(format!(
                         "const {} = require({:?});",
@@ -179,4 +159,68 @@ fn transform_import(
     }
 
     Ok(output.trim_end().to_string())
+}
+
+fn transform_named_export(
+    _source: &str,
+    export: &oxc_ast::ast::ExportNamedDeclaration,
+    output: &mut String,
+) -> Result<(), String> {
+    for specifier in export.specifiers.iter() {
+        let local = module_export_name_to_string(&specifier.local);
+
+        let exported = module_export_name_to_string(&specifier.exported);
+
+        output.push_str(&format!("exports.{} = {};\n", exported, local));
+    }
+
+    Ok(())
+}
+
+fn transform_default_export(
+    source: &str,
+    export: &oxc_ast::ast::ExportDefaultDeclaration,
+    output: &mut String,
+) -> Result<(), String> {
+    match &export.declaration {
+        oxc_ast::ast::ExportDefaultDeclarationKind::FunctionDeclaration(function) => {
+            let function_name = function
+                .id
+                .as_ref()
+                .ok_or_else(|| "Anonymous default functions are not supported yet".to_string())?;
+
+            let start = function.span.start as usize;
+            let end = function.span.end as usize;
+
+            output.push_str(&source[start..end]);
+            output.push_str("\n\n");
+
+            output.push_str(&format!("exports.default = {};\n", function_name.name));
+        }
+
+        oxc_ast::ast::ExportDefaultDeclarationKind::ClassDeclaration(class) => {
+            let class_name = class
+                .id
+                .as_ref()
+                .ok_or_else(|| "Anonymous default classes are not supported yet".to_string())?;
+
+            let start = class.span.start as usize;
+            let end = class.span.end as usize;
+
+            output.push_str(&source[start..end]);
+            output.push_str("\n\n");
+
+            output.push_str(&format!("exports.default = {};\n", class_name.name));
+        }
+
+        _ => {
+            return Err("Unsupported default export declaration".to_string());
+        }
+    }
+
+    Ok(())
+}
+
+fn module_export_name_to_string(name: &oxc_ast::ast::ModuleExportName) -> String {
+    name.name().to_string()
 }
