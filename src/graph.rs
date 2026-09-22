@@ -35,20 +35,14 @@ impl ModuleGraph {
     fn visit(&mut self, path: &Path) -> Result<(), String> {
         let id = utils::module_id(path);
 
-        // Module has already been completely processed.
         if self.states.get(&id) == Some(&ModuleState::Visited) {
             return Ok(());
         }
 
-        // Module is currently being processed.
-        //
-        // Seeing it again means we have a circular dependency.
         if self.states.get(&id) == Some(&ModuleState::Visiting) {
             return Err(format!("Circular dependency detected at module '{}'", id));
         }
 
-        // Mark module as currently being processed before
-        // visiting its dependencies.
         self.states.insert(id.clone(), ModuleState::Visiting);
 
         let source = fs::read_to_string(path)
@@ -60,10 +54,8 @@ impl ModuleGraph {
 
         for import in &parsed.imports {
             let resolved = resolver::resolve(path, &import.source)?;
-
             let resolved_id = utils::module_id(&resolved);
 
-            // Recursively process the dependency.
             self.visit(&resolved)?;
 
             let dependency = self.modules.get(&resolved_id).ok_or_else(|| {
@@ -72,10 +64,15 @@ impl ModuleGraph {
 
             // Validate named imports.
             for imported_name in &import.named {
-                let exists = dependency
-                    .exports
-                    .iter()
-                    .any(|export| matches!(export, Export::Named(name) if name == imported_name));
+                let exists = dependency.exports.iter().any(|export| {
+                    matches!(
+                        export,
+                        Export::Named {
+                            exported,
+                            ..
+                        } if exported == imported_name
+                    )
+                });
 
                 if !exists {
                     return Err(format!(
@@ -117,8 +114,6 @@ impl ModuleGraph {
         );
 
         self.modules.insert(id.clone(), module);
-
-        // Module has now been completely processed.
         self.states.insert(id, ModuleState::Visited);
 
         Ok(())
