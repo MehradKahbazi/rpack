@@ -60,6 +60,29 @@ pub fn transform(
                 }
             },
 
+            Statement::ExportDefaultDeclaration(export) => match &export.declaration {
+                oxc_ast::ast::ExportDefaultDeclarationKind::FunctionDeclaration(function) => {
+                    let function_name = function.id.as_ref().ok_or_else(|| {
+                        "Anonymous default functions are not supported yet".to_string()
+                    })?;
+
+                    let start = function.span.start as usize;
+
+                    let end = function.span.end as usize;
+
+                    let function_source = &source[start..end];
+
+                    output.push_str(function_source);
+                    output.push_str("\n\n");
+
+                    output.push_str(&format!("exports.default = {};\n", function_name.name));
+                }
+
+                _ => {
+                    return Err("Unsupported default export".to_string());
+                }
+            },
+
             Statement::VariableDeclaration(declaration) => {
                 let start = declaration.span.start as usize;
                 let end = declaration.span.end as usize;
@@ -89,39 +112,71 @@ fn transform_import(
     import: &ImportDeclaration,
     dependencies: &[crate::module::Dependency],
 ) -> Result<String, String> {
-    let source = import.source.value;
+    let source = import.source.value.to_string();
 
     let dependency = dependencies
         .iter()
-        .find(|dependency| dependency.request.as_str() == source)
+        .find(|dependency| dependency.request == source)
         .ok_or_else(|| format!("Dependency '{}' was not resolved", source))?;
 
-    let mut bindings = Vec::new();
+    let mut named_bindings = Vec::new();
+    let mut default_binding = None;
 
     for specifiers in import.specifiers.iter() {
         for specifier in specifiers.iter() {
             match specifier {
                 oxc_ast::ast::ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
                     let imported = specifier.imported.name();
+
                     let local = specifier.local.name;
 
+                    println!("Transforming named import: {} as {}", imported, local);
+
                     if imported == local {
-                        bindings.push(imported.to_string());
+                        named_bindings.push(imported.to_string());
                     } else {
-                        bindings.push(format!("{}: {}", imported, local));
+                        named_bindings.push(format!("{}: {}", imported, local));
                     }
                 }
 
-                _ => {
-                    return Err("Unsupported import type".to_string());
+                oxc_ast::ast::ImportDeclarationSpecifier::ImportDefaultSpecifier(specifier) => {
+                    let local = specifier.local.name;
+
+                    println!("Transforming default import: {}", local);
+
+                    default_binding = Some(local.to_string());
+                }
+
+                oxc_ast::ast::ImportDeclarationSpecifier::ImportNamespaceSpecifier(specifier) => {
+                    let local = specifier.local.name;
+
+                    println!("Transforming namespace import: {}", local);
+
+                    return Ok(format!(
+                        "const {} = require({:?});",
+                        local, dependency.resolved_id
+                    ));
                 }
             }
         }
     }
 
-    Ok(format!(
-        "const {{ {} }} = require({:?});",
-        bindings.join(", "),
-        dependency.resolved_id
-    ))
+    let mut output = String::new();
+
+    if let Some(local) = default_binding {
+        output.push_str(&format!(
+            "const {} = require({:?}).default;\n",
+            local, dependency.resolved_id
+        ));
+    }
+
+    if !named_bindings.is_empty() {
+        output.push_str(&format!(
+            "const {{ {} }} = require({:?});",
+            named_bindings.join(", "),
+            dependency.resolved_id
+        ));
+    }
+
+    Ok(output.trim_end().to_string())
 }
