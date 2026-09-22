@@ -18,22 +18,34 @@ pub fn transform(source: &str, filename: &str) -> Result<String, String> {
         ));
     }
 
-    let mut output = source.to_string();
+    let mut output = String::new();
 
     for statement in &result.program.body {
-        if let Statement::ExportDeclaration(export) = statement {
-            match &export.declaration {
+        match statement {
+            Statement::ExportDeclaration(export) => match &export.declaration {
                 Declaration::FunctionDeclaration(function) => {
-                    let function = function
+                    let function_name = function
                         .id
                         .as_ref()
                         .ok_or_else(|| "Exported function has no name".to_string())?;
 
-                    println!("Transforming exported function: {}", function.name);
+                    let start = function.span.start as usize;
+                    let end = function.span.end as usize;
+
+                    let function_source = &source[start..end];
+
+                    output.push_str(function_source);
+                    output.push_str("\n\n");
+                    output.push_str(&format!(
+                        "exports.{} = {};\n",
+                        function_name.name, function_name.name
+                    ));
                 }
 
                 _ => {}
-            }
+            },
+
+            _ => {}
         }
     }
 
