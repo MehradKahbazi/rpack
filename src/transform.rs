@@ -27,7 +27,8 @@ pub fn transform(
     for statement in &result.program.body {
         match statement {
             Statement::ImportDeclaration(import) => {
-                output.push_str(&transform_import(import));
+                output.push_str(&transform_import(import, dependencies)?);
+
                 output.push('\n');
             }
 
@@ -84,8 +85,16 @@ pub fn transform(
     Ok(output)
 }
 
-fn transform_import(import: &ImportDeclaration) -> String {
+fn transform_import(
+    import: &ImportDeclaration,
+    dependencies: &[crate::module::Dependency],
+) -> Result<String, String> {
     let source = import.source.value;
+
+    let dependency = dependencies
+        .iter()
+        .find(|dependency| dependency.request.as_str() == source)
+        .ok_or_else(|| format!("Dependency '{}' was not resolved", source))?;
 
     let mut bindings = Vec::new();
 
@@ -96,8 +105,6 @@ fn transform_import(import: &ImportDeclaration) -> String {
                     let imported = specifier.imported.name();
                     let local = specifier.local.name;
 
-                    println!("Transforming import: {} as {}", imported, local);
-
                     if imported == local {
                         bindings.push(imported.to_string());
                     } else {
@@ -106,15 +113,15 @@ fn transform_import(import: &ImportDeclaration) -> String {
                 }
 
                 _ => {
-                    return format!("// Unsupported import from {:?}", source);
+                    return Err("Unsupported import type".to_string());
                 }
             }
         }
     }
 
-    format!(
+    Ok(format!(
         "const {{ {} }} = require({:?});",
         bindings.join(", "),
-        source
-    )
+        dependency.resolved_id
+    ))
 }

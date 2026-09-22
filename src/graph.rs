@@ -34,7 +34,6 @@ impl ModuleGraph {
             .map_err(|error| format!("Failed to read '{}': {error}", path.display()))?;
 
         let imports = parser::parse(&source, &id)?;
-        let transformed_source = transform::transform(&source, &id)?;
 
         let mut dependencies = Vec::new();
 
@@ -50,6 +49,8 @@ impl ModuleGraph {
                 resolved_id,
             });
         }
+
+        let transformed_source = transform::transform(&source, &id, &dependencies)?;
 
         let module = Module::new(id.clone(), source, transformed_source, dependencies);
         self.modules.insert(id, module);
