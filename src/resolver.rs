@@ -1,6 +1,16 @@
 use std::path::{Path, PathBuf};
 
+const EXTENSIONS: &[&str] = &["js", "jsx", "ts", "tsx"];
+
 pub fn resolve(importer: &Path, dependency: &str) -> Result<PathBuf, String> {
+    if !dependency.starts_with('.') {
+        return Err(format!(
+            "Unsupported package import '{}' from '{}'",
+            dependency,
+            importer.display()
+        ));
+    }
+
     let importer_dir = importer.parent().ok_or_else(|| {
         format!(
             "Cannot determine parent directory of '{}'",
@@ -10,25 +20,46 @@ pub fn resolve(importer: &Path, dependency: &str) -> Result<PathBuf, String> {
 
     let requested = importer_dir.join(dependency);
 
-    let requested = requested
-        .canonicalize()
-        .map_err(|error| format!("Failed to resolve '{}': {error}", requested.display()))?;
+    resolve_path(&requested).ok_or_else(|| {
+        format!(
+            "Cannot resolve '{}' from '{}'",
+            dependency,
+            importer.display()
+        )
+    })
+}
 
-    if requested.exists() && requested.is_file() {
-        return Ok(requested);
+fn resolve_path(path: &Path) -> Option<PathBuf> {
+    // 1. Exact file
+    if path.is_file() {
+        return canonicalize(path);
     }
 
-    if requested.extension().is_none() {
-        let with_js = requested.with_extension("js");
+    // 2. File with supported extension
+    if path.extension().is_none() {
+        for extension in EXTENSIONS {
+            let candidate = path.with_extension(extension);
 
-        if with_js.exists() && with_js.is_file() {
-            return Ok(with_js);
+            if candidate.is_file() {
+                return canonicalize(&candidate);
+            }
         }
     }
 
-    Err(format!(
-        "Cannot resolve '{}' from '{}'",
-        dependency,
-        importer.display()
-    ))
+    // 3. Directory index file
+    if path.is_dir() {
+        for extension in EXTENSIONS {
+            let candidate = path.join(format!("index.{extension}"));
+
+            if candidate.is_file() {
+                return canonicalize(&candidate);
+            }
+        }
+    }
+
+    None
+}
+
+fn canonicalize(path: &Path) -> Option<PathBuf> {
+    path.canonicalize().ok()
 }
