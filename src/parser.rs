@@ -3,16 +3,19 @@ use oxc_ast::ast::{Declaration, ImportDeclarationSpecifier, Statement};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 
+use crate::module::Export;
+
 #[derive(Debug)]
 pub struct ImportInfo {
     pub source: String,
     pub named: Vec<String>,
+    pub default: Option<String>,
 }
 
 #[derive(Debug)]
 pub struct ParseResult {
     pub imports: Vec<ImportInfo>,
-    pub exports: Vec<String>,
+    pub exports: Vec<Export>,
 }
 
 pub fn parse(source: &str, filename: &str) -> Result<ParseResult, String> {
@@ -37,12 +40,17 @@ pub fn parse(source: &str, filename: &str) -> Result<ParseResult, String> {
         match statement {
             Statement::ImportDeclaration(import) => {
                 let mut named = Vec::new();
+                let mut default = None;
 
                 for specifiers in import.specifiers.iter() {
                     for specifier in specifiers.iter() {
                         match specifier {
                             ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
                                 named.push(specifier.imported.name().to_string());
+                            }
+
+                            ImportDeclarationSpecifier::ImportDefaultSpecifier(specifier) => {
+                                default = Some(specifier.local.name.to_string());
                             }
 
                             _ => {}
@@ -53,6 +61,7 @@ pub fn parse(source: &str, filename: &str) -> Result<ParseResult, String> {
                 imports.push(ImportInfo {
                     source: import.source.value.to_string(),
                     named,
+                    default,
                 });
             }
 
@@ -63,7 +72,27 @@ pub fn parse(source: &str, filename: &str) -> Result<ParseResult, String> {
                         .as_ref()
                         .ok_or_else(|| "Exported function has no name".to_string())?;
 
-                    exports.push(function_name.name.to_string());
+                    exports.push(Export::Named(function_name.name.to_string()));
+                }
+            }
+
+            Statement::ExportDefaultDeclaration(export) => {
+                // فعلاً فقط default function را پشتیبانی می‌کنیم.
+                //
+                // ساختار دقیق declaration را در این نسخه
+                // از Oxc بررسی می‌کنیم.
+                match &export.declaration {
+                    oxc_ast::ast::ExportDefaultDeclarationKind::FunctionDeclaration(function) => {
+                        let function_name = function.id.as_ref().ok_or_else(|| {
+                            "Anonymous default functions are not supported yet".to_string()
+                        })?;
+
+                        exports.push(Export::Default(function_name.name.to_string()));
+                    }
+
+                    _ => {
+                        return Err("Unsupported default export".to_string());
+                    }
                 }
             }
 
