@@ -28,9 +28,9 @@ pub fn transform(
 
     for statement in &result.program.body {
         match statement {
-            // =========================================================
-            // IMPORT
-            // =========================================================
+            // -----------------------------------------------------
+            // Imports
+            // -----------------------------------------------------
             Statement::ImportDeclaration(import) => {
                 let transformed = transform_import(import, dependencies)?;
 
@@ -40,88 +40,91 @@ pub fn transform(
                 }
             }
 
-            // =========================================================
+            // -----------------------------------------------------
+            // Named exports
+            //
             // export { foo };
             // export { foo as bar };
-            // =========================================================
+            // -----------------------------------------------------
             Statement::ExportNamedDeclaration(export) => {
                 transform_named_export(export, &mut output)?;
             }
 
-            // =========================================================
-            // export default function ...
-            // export default class ...
-            // =========================================================
+            // -----------------------------------------------------
+            // Re-exports
+            //
+            // export { foo } from "./foo.js";
+            // export { foo as bar } from "./foo.js";
+            // -----------------------------------------------------
+            Statement::ExportFromDeclaration(export) => {
+                transform_re_export(export, dependencies, &mut output)?;
+            }
+
+            // -----------------------------------------------------
+            // Export all
+            //
+            // export * from "./foo.js";
+            // -----------------------------------------------------
+            Statement::ExportAllDeclaration(export) => {
+                transform_export_all(export, dependencies, &mut output)?;
+            }
+
+            // -----------------------------------------------------
+            // Default exports
+            //
+            // export default function foo() {}
+            // export default class Foo {}
+            // -----------------------------------------------------
             Statement::ExportDefaultDeclaration(export) => {
                 transform_default_export(source, export, &mut output)?;
             }
 
-            // =========================================================
-            // export const ...
-            // export let ...
-            // export var ...
-            // export function ...
-            // export class ...
-            // =========================================================
+            // -----------------------------------------------------
+            // Export declarations
+            //
+            // export function foo() {}
+            // export class Foo {}
+            // export const foo = 1;
+            // -----------------------------------------------------
             Statement::ExportDeclaration(export) => {
                 transform_export_declaration(source, &export.declaration, &mut output)?;
             }
 
-            // =========================================================
-            // Normal variable declaration
-            // =========================================================
+            // -----------------------------------------------------
+            // Normal statements
+            // -----------------------------------------------------
             Statement::VariableDeclaration(declaration) => {
                 let start = declaration.span.start as usize;
-
                 let end = declaration.span.end as usize;
 
                 output.push_str(&source[start..end]);
-
                 output.push('\n');
             }
 
-            // =========================================================
-            // Normal expression
-            // =========================================================
             Statement::ExpressionStatement(statement) => {
                 let start = statement.span.start as usize;
-
                 let end = statement.span.end as usize;
 
                 output.push_str(&source[start..end]);
-
                 output.push('\n');
             }
 
-            // =========================================================
-            // Normal function
-            // =========================================================
             Statement::FunctionDeclaration(function) => {
                 let start = function.span.start as usize;
-
                 let end = function.span.end as usize;
 
                 output.push_str(&source[start..end]);
-
                 output.push('\n');
             }
 
-            // =========================================================
-            // Normal class
-            // =========================================================
             Statement::ClassDeclaration(class) => {
                 let start = class.span.start as usize;
-
                 let end = class.span.end as usize;
 
                 output.push_str(&source[start..end]);
-
                 output.push('\n');
             }
 
-            // =========================================================
-            // Unsupported
-            // =========================================================
             _ => {
                 println!("Skipping unsupported statement");
             }
@@ -131,9 +134,9 @@ pub fn transform(
     Ok(output)
 }
 
-// =====================================================================
-// IMPORTS
-// =====================================================================
+// ================================================================
+// Imports
+// ================================================================
 
 fn transform_import(
     import: &ImportDeclaration,
@@ -146,15 +149,11 @@ fn transform_import(
         .find(|dependency| dependency.request == source)
         .ok_or_else(|| format!("Dependency '{}' was not resolved", source))?;
 
-    // -----------------------------------------------------------------
+    // ------------------------------------------------------------
     // Side-effect import
     //
-    // import "./setup.js";
-    //
-    // =>
-    //
-    // require("/absolute/path/setup.js");
-    // -----------------------------------------------------------------
+    // import "./module.js";
+    // ------------------------------------------------------------
 
     if import.specifiers.is_none() {
         return Ok(format!("require({:?});", dependency.resolved_id));
@@ -166,11 +165,10 @@ fn transform_import(
     if let Some(specifiers) = &import.specifiers {
         for specifier in specifiers.iter() {
             match specifier {
-                // -----------------------------------------------------
-                // import { add } from "./math.js";
-                //
-                // import { add as sum } from "./math.js";
-                // -----------------------------------------------------
+                // ------------------------------------------------
+                // import { foo } from "./module.js";
+                // import { foo as bar } from "./module.js";
+                // ------------------------------------------------
                 ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
                     let imported = specifier.imported.name();
 
@@ -183,18 +181,16 @@ fn transform_import(
                     }
                 }
 
-                // -----------------------------------------------------
-                // import foo from "./foo.js";
-                // -----------------------------------------------------
+                // ------------------------------------------------
+                // import foo from "./module.js";
+                // ------------------------------------------------
                 ImportDeclarationSpecifier::ImportDefaultSpecifier(specifier) => {
-                    let local = specifier.local.name;
-
-                    default_binding = Some(local.to_string());
+                    default_binding = Some(specifier.local.name.to_string());
                 }
 
-                // -----------------------------------------------------
-                // import * as foo from "./foo.js";
-                // -----------------------------------------------------
+                // ------------------------------------------------
+                // import * as foo from "./module.js";
+                // ------------------------------------------------
                 ImportDeclarationSpecifier::ImportNamespaceSpecifier(specifier) => {
                     let local = specifier.local.name;
 
@@ -209,9 +205,9 @@ fn transform_import(
 
     let mut output = String::new();
 
-    // -----------------------------------------------------------------
+    // ------------------------------------------------------------
     // Default import
-    // -----------------------------------------------------------------
+    // ------------------------------------------------------------
 
     if let Some(local) = default_binding {
         output.push_str(&format!(
@@ -220,9 +216,9 @@ fn transform_import(
         ));
     }
 
-    // -----------------------------------------------------------------
+    // ------------------------------------------------------------
     // Named imports
-    // -----------------------------------------------------------------
+    // ------------------------------------------------------------
 
     if !named_bindings.is_empty() {
         output.push_str(&format!(
@@ -235,18 +231,9 @@ fn transform_import(
     Ok(output.trim_end().to_string())
 }
 
-// =====================================================================
-// NAMED EXPORTS
-// =====================================================================
-//
-// export { foo };
-// export { foo as bar };
-//
-// =>
-//
-// exports.foo = foo;
-// exports.bar = foo;
-// =====================================================================
+// ================================================================
+// Named exports
+// ================================================================
 
 fn transform_named_export(
     export: &oxc_ast::ast::ExportNamedDeclaration,
@@ -263,18 +250,63 @@ fn transform_named_export(
     Ok(())
 }
 
-// =====================================================================
-// DEFAULT EXPORT
-// =====================================================================
-//
-// export default function foo() {}
-//
-// =>
-//
-// function foo() {}
-//
-// exports.default = foo;
-// =====================================================================
+// ================================================================
+// Named re-exports
+// ================================================================
+
+fn transform_re_export(
+    export: &oxc_ast::ast::ExportFromDeclaration,
+    dependencies: &[Dependency],
+    output: &mut String,
+) -> Result<(), String> {
+    let source = export.source.value.to_string();
+
+    let dependency = dependencies
+        .iter()
+        .find(|dependency| dependency.request == source)
+        .ok_or_else(|| format!("Dependency '{}' was not resolved", source))?;
+
+    for specifier in export.specifiers.iter() {
+        let imported = module_export_name_to_string(&specifier.local);
+
+        let exported = module_export_name_to_string(&specifier.exported);
+
+        output.push_str(&format!(
+            "exports.{} = require({:?}).{};\n",
+            exported, dependency.resolved_id, imported
+        ));
+    }
+
+    Ok(())
+}
+
+// ================================================================
+// Export all
+// ================================================================
+
+fn transform_export_all(
+    export: &oxc_ast::ast::ExportAllDeclaration,
+    dependencies: &[Dependency],
+    output: &mut String,
+) -> Result<(), String> {
+    let source = export.source.value.to_string();
+
+    let dependency = dependencies
+        .iter()
+        .find(|dependency| dependency.request == source)
+        .ok_or_else(|| format!("Dependency '{}' was not resolved", source))?;
+
+    output.push_str(&format!(
+        "Object.assign(exports, require({:?}));\n",
+        dependency.resolved_id
+    ));
+
+    Ok(())
+}
+
+// ================================================================
+// Default exports
+// ================================================================
 
 fn transform_default_export(
     source: &str,
@@ -324,21 +356,9 @@ fn transform_default_export(
     Ok(())
 }
 
-// =====================================================================
-// EXPORT DECLARATIONS
-// =====================================================================
-//
-// export function add() {}
-//
-// export class User {}
-//
-// export const foo = 1;
-//
-// export let bar = 2;
-//
-// export var baz = 3;
-//
-// =====================================================================
+// ================================================================
+// Export declarations
+// ================================================================
 
 fn transform_export_declaration(
     source: &str,
@@ -346,9 +366,6 @@ fn transform_export_declaration(
     output: &mut String,
 ) -> Result<(), String> {
     match declaration {
-        // -------------------------------------------------------------
-        // export function add() {}
-        // -------------------------------------------------------------
         oxc_ast::ast::Declaration::FunctionDeclaration(function) => {
             let start = function.span.start as usize;
 
@@ -366,9 +383,6 @@ fn transform_export_declaration(
             output.push_str(&format!("exports.{} = {};\n", name.name, name.name));
         }
 
-        // -------------------------------------------------------------
-        // export class User {}
-        // -------------------------------------------------------------
         oxc_ast::ast::Declaration::ClassDeclaration(class) => {
             let start = class.span.start as usize;
 
@@ -386,11 +400,6 @@ fn transform_export_declaration(
             output.push_str(&format!("exports.{} = {};\n", name.name, name.name));
         }
 
-        // -------------------------------------------------------------
-        // export const foo = 1;
-        // export let foo = 1;
-        // export var foo = 1;
-        // -------------------------------------------------------------
         oxc_ast::ast::Declaration::VariableDeclaration(variable) => {
             let start = variable.span.start as usize;
 
@@ -421,9 +430,9 @@ fn transform_export_declaration(
     Ok(())
 }
 
-// =====================================================================
-// HELPERS
-// =====================================================================
+// ================================================================
+// Helpers
+// ================================================================
 
 fn module_export_name_to_string(name: &oxc_ast::ast::ModuleExportName) -> String {
     name.name().to_string()
