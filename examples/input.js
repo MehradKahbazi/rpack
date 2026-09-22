@@ -1,4 +1,4 @@
-import { add } from "./math.js";
+import add from "./math.js";
 
 const result = add(10, 20);
 
