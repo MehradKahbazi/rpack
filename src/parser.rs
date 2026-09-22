@@ -1,5 +1,7 @@
 use oxc_allocator::Allocator;
-use oxc_ast::ast::{Declaration, ImportDeclarationSpecifier, Statement};
+use oxc_ast::ast::{
+    Declaration, ExportFromDeclaration, ImportDeclarationSpecifier, Statement,
+};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 
@@ -13,8 +15,22 @@ pub struct ImportInfo {
 }
 
 #[derive(Debug)]
+pub enum ReExport {
+    Named {
+        source: String,
+        imported: String,
+        exported: String,
+    },
+
+    Namespace {
+        source: String,
+    },
+}
+
+#[derive(Debug)]
 pub struct ParseResult {
     pub imports: Vec<ImportInfo>,
+    pub re_exports: Vec<ReExport>,
     pub exports: Vec<Export>,
 }
 
@@ -34,10 +50,14 @@ pub fn parse(source: &str, filename: &str) -> Result<ParseResult, String> {
     }
 
     let mut imports = Vec::new();
+    let mut re_exports = Vec::new();
     let mut exports = Vec::new();
 
     for statement in &result.program.body {
         match statement {
+            // =========================================================
+            // import ...
+            // =========================================================
             Statement::ImportDeclaration(import) => {
                 let mut named = Vec::new();
                 let mut default = None;
@@ -68,16 +88,40 @@ pub fn parse(source: &str, filename: &str) -> Result<ParseResult, String> {
                 });
             }
 
+            // =========================================================
+            // export const/function/class ...
+            // =========================================================
             Statement::ExportDeclaration(export) => {
                 parse_export_declaration(&export.declaration, &mut exports)?;
             }
 
+            // =========================================================
+            // export { foo };
+            // export { foo as bar };
+            // =========================================================
             Statement::ExportNamedDeclaration(export) => {
                 for specifier in export.specifiers.iter() {
                     parse_export_specifier(specifier, &mut exports)?;
                 }
             }
 
+            // =========================================================
+            // export { foo } from "./foo.js";
+            // export { foo as bar } from "./foo.js";
+            // export { default as foo } from "./foo.js";
+            // =========================================================
+            Statement::ExportAllDeclaration(export) => {
+                re_exports.push(ReExport::Namespace {
+                    source: export.source.value.to_string(),
+                });
+            }
+            Statement::ExportFromDeclaration(export) => {
+                parse_re_export(export, &mut re_exports)?;
+            }
+
+            // =========================================================
+            // export default ...
+            // =========================================================
             Statement::ExportDefaultDeclaration(export) => match &export.declaration {
                 oxc_ast::ast::ExportDefaultDeclarationKind::FunctionDeclaration(function) => {
                     let function_name = function.id.as_ref().ok_or_else(|| {
@@ -104,8 +148,18 @@ pub fn parse(source: &str, filename: &str) -> Result<ParseResult, String> {
         }
     }
 
-    Ok(ParseResult { imports, exports })
+    Ok(ParseResult {
+        imports,
+        re_exports,
+        exports,
+    })
 }
+
+// =====================================================================
+// export const / let / var
+// export function
+// export class
+// =====================================================================
 
 fn parse_export_declaration(
     declaration: &Declaration,
@@ -167,6 +221,11 @@ fn parse_export_declaration(
     Ok(())
 }
 
+// =====================================================================
+// export { foo };
+// export { foo as bar };
+// =====================================================================
+
 fn parse_export_specifier(
     specifier: &oxc_ast::ast::ExportSpecifier,
     exports: &mut Vec<Export>,
@@ -179,6 +238,53 @@ fn parse_export_specifier(
 
     Ok(())
 }
+
+// =====================================================================
+// export { foo } from "./foo.js";
+// export { foo as bar } from "./foo.js";
+// export { default as foo } from "./foo.js";
+// export * from "./foo.js";
+// =====================================================================
+
+fn parse_re_export(
+    export: &ExportFromDeclaration,
+    re_exports: &mut Vec<ReExport>,
+) -> Result<(), String> {
+    let source = export.source.value.to_string();
+
+    // -------------------------------------------------------------
+    // export * from "./math.js";
+    // -------------------------------------------------------------
+
+    if export.specifiers.is_empty() {
+        re_exports.push(ReExport::Namespace { source });
+
+        return Ok(());
+    }
+
+    // -------------------------------------------------------------
+    // export { foo } from "./math.js";
+    // export { foo as bar } from "./math.js";
+    // -------------------------------------------------------------
+
+    for specifier in export.specifiers.iter() {
+        let imported = module_export_name_to_string(&specifier.local);
+
+        let exported = module_export_name_to_string(&specifier.exported);
+
+        re_exports.push(ReExport::Named {
+            source: source.clone(),
+            imported,
+            exported,
+        });
+    }
+
+    Ok(())
+}
+
+// =====================================================================
+// ModuleExportName -> String
+// =====================================================================
 
 fn module_export_name_to_string(name: &oxc_ast::ast::ModuleExportName) -> String {
     name.name().to_string()
