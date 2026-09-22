@@ -3,7 +3,11 @@ use oxc_ast::ast::{Declaration, ImportDeclaration, Statement};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 
-pub fn transform(source: &str, filename: &str) -> Result<String, String> {
+pub fn transform(
+    source: &str,
+    filename: &str,
+    dependencies: &[crate::module::Dependency],
+) -> Result<String, String> {
     let allocator = Allocator::default();
 
     let source_type = SourceType::from_path(filename)
