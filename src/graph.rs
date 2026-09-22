@@ -38,15 +38,28 @@ impl ModuleGraph {
 
         let mut dependencies = Vec::new();
 
-        for import in parsed.imports {
-            let resolved = resolver::resolve(path, &import)?;
+        for import in &parsed.imports {
+            let resolved = resolver::resolve(path, &import.source)?;
 
             let resolved_id = utils::module_id(&resolved);
 
             self.visit(&resolved)?;
 
+            let dependency = self.modules.get(&resolved_id).ok_or_else(|| {
+                format!("Resolved module '{}' was not added to graph", resolved_id)
+            })?;
+
+            for imported_name in &import.named {
+                if !dependency.exports.contains(imported_name) {
+                    return Err(format!(
+                        "Module '{}' does not export '{}'",
+                        import.source, imported_name
+                    ));
+                }
+            }
+
             dependencies.push(crate::module::Dependency {
-                request: import,
+                request: import.source.clone(),
                 resolved_id,
             });
         }
