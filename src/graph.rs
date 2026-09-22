@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use crate::module::Module;
+use crate::module::{Export, Module};
 use crate::parser;
 use crate::resolver;
 use crate::transform;
@@ -49,11 +49,35 @@ impl ModuleGraph {
                 format!("Resolved module '{}' was not added to graph", resolved_id)
             })?;
 
+            // Validate named imports.
             for imported_name in &import.named {
-                if !dependency.exports.contains(imported_name) {
+                let exists = dependency.exports.iter().any(|export| {
+                    matches!(
+                        export,
+                        Export::Named(name)
+                            if name == imported_name
+                    )
+                });
+
+                if !exists {
                     return Err(format!(
                         "Module '{}' does not export '{}'",
                         import.source, imported_name
+                    ));
+                }
+            }
+
+            // Validate default import.
+            if import.default.is_some() {
+                let has_default = dependency
+                    .exports
+                    .iter()
+                    .any(|export| matches!(export, Export::Default(_)));
+
+                if !has_default {
+                    return Err(format!(
+                        "Module '{}' does not have a default export",
+                        import.source
                     ));
                 }
             }
