@@ -35,7 +35,16 @@ fn generate_bundle(graph: &ModuleGraph, entry: &PathBuf) -> Result<String, Strin
 
     output.push_str("  const modules = {\n");
 
-    for (id, module) in &graph.modules {
+    let mut module_ids: Vec<&String> = graph.modules.keys().collect();
+
+    module_ids.sort();
+
+    for id in module_ids {
+        let module = graph
+            .modules
+            .get(id)
+            .ok_or_else(|| format!("Module '{}' disappeared from graph", id))?;
+
         output.push_str(&format!(
             "    {:?}: function(module, exports, require) {{\n",
             id
