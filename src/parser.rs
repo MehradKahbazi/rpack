@@ -1,14 +1,15 @@
 use oxc_allocator::Allocator;
-use oxc_ast::ast::Statement;
+use oxc_ast::ast::{Declaration, Statement};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 
-pub struct ParsedModule<'a> {
-    pub dependencies: Vec<String>,
-    pub statements: Vec<&'a Statement<'a>>,
+#[derive(Debug)]
+pub struct ParseResult {
+    pub imports: Vec<String>,
+    pub exports: Vec<String>,
 }
 
-pub fn parse(source: &str, filename: &str) -> Result<Vec<String>, String> {
+pub fn parse(source: &str, filename: &str) -> Result<ParseResult, String> {
     let allocator = Allocator::default();
 
     let source_type = SourceType::from_path(filename)
@@ -23,25 +24,29 @@ pub fn parse(source: &str, filename: &str) -> Result<Vec<String>, String> {
         ));
     }
 
-    let mut dependencies = Vec::new();
-    // println!("PARSER RUNNING: {filename}");
+    let mut imports = Vec::new();
+    let mut exports = Vec::new();
 
     for statement in &result.program.body {
-        // println!("STATEMENT: {:?}", statement);
-
         match statement {
             Statement::ImportDeclaration(import) => {
-                // println!("IMPORT: {}", import.source.value);
-                dependencies.push(import.source.value.to_string());
+                imports.push(import.source.value.to_string());
             }
 
             Statement::ExportDeclaration(export) => {
-                // println!("EXPORT FOUND: {:?}", export);
+                if let Declaration::FunctionDeclaration(function) = &export.declaration {
+                    let function_name = function
+                        .id
+                        .as_ref()
+                        .ok_or_else(|| "Exported function has no name".to_string())?;
+
+                    exports.push(function_name.name.to_string());
+                }
             }
 
             _ => {}
         }
     }
 
-    Ok(dependencies)
+    Ok(ParseResult { imports, exports })
 }
