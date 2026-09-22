@@ -1,5 +1,4 @@
-import { add, multiply, Calculator } from "./math.js";
+import { add, subtract } from "./bar.js";
 
 console.log(add(2, 3));
-console.log(multiply(2, 3));
-console.log(Calculator);
+console.log(subtract(5, 2));
