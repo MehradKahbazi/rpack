@@ -1,5 +1,7 @@
 use oxc_allocator::Allocator;
-use oxc_ast::ast::{Declaration, ImportDeclarationSpecifier, Statement};
+use oxc_ast::ast::{
+    Declaration, ExportSpecifier, ImportDeclarationSpecifier, ModuleExportName, Statement,
+};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 
@@ -53,7 +55,7 @@ pub fn parse(source: &str, filename: &str) -> Result<ParseResult, String> {
                                 default = Some(specifier.local.name.to_string());
                             }
 
-                            _ => {}
+                            ImportDeclarationSpecifier::ImportNamespaceSpecifier(_) => {}
                         }
                     }
                 }
@@ -66,39 +68,112 @@ pub fn parse(source: &str, filename: &str) -> Result<ParseResult, String> {
             }
 
             Statement::ExportDeclaration(export) => {
-                if let Declaration::FunctionDeclaration(function) = &export.declaration {
-                    let function_name = function
-                        .id
-                        .as_ref()
-                        .ok_or_else(|| "Exported function has no name".to_string())?;
+                parse_export_declaration(&export.declaration, &mut exports)?;
+            }
 
-                    exports.push(Export::Named(function_name.name.to_string()));
+            Statement::ExportNamedDeclaration(export) => {
+                for specifier in export.specifiers.iter() {
+                    parse_export_specifier(specifier, &mut exports)?;
                 }
             }
 
-            Statement::ExportDefaultDeclaration(export) => {
-                // فعلاً فقط default function را پشتیبانی می‌کنیم.
-                //
-                // ساختار دقیق declaration را در این نسخه
-                // از Oxc بررسی می‌کنیم.
-                match &export.declaration {
-                    oxc_ast::ast::ExportDefaultDeclarationKind::FunctionDeclaration(function) => {
-                        let function_name = function.id.as_ref().ok_or_else(|| {
-                            "Anonymous default functions are not supported yet".to_string()
-                        })?;
+            Statement::ExportDefaultDeclaration(export) => match &export.declaration {
+                oxc_ast::ast::ExportDefaultDeclarationKind::FunctionDeclaration(function) => {
+                    let function_name = function.id.as_ref().ok_or_else(|| {
+                        "Anonymous default functions are not supported yet".to_string()
+                    })?;
 
-                        exports.push(Export::Default(function_name.name.to_string()));
-                    }
-
-                    _ => {
-                        return Err("Unsupported default export".to_string());
-                    }
+                    exports.push(Export::Default(function_name.name.to_string()));
                 }
-            }
+
+                oxc_ast::ast::ExportDefaultDeclarationKind::ClassDeclaration(class) => {
+                    let class_name = class.id.as_ref().ok_or_else(|| {
+                        "Anonymous default classes are not supported yet".to_string()
+                    })?;
+
+                    exports.push(Export::Default(class_name.name.to_string()));
+                }
+
+                _ => {
+                    return Err("Unsupported default export".to_string());
+                }
+            },
 
             _ => {}
         }
     }
 
     Ok(ParseResult { imports, exports })
+}
+
+fn parse_export_declaration(
+    declaration: &Declaration,
+    exports: &mut Vec<Export>,
+) -> Result<(), String> {
+    match declaration {
+        Declaration::FunctionDeclaration(function) => {
+            let name = function
+                .id
+                .as_ref()
+                .ok_or_else(|| "Exported function has no name".to_string())?;
+
+            exports.push(Export::Named {
+                local: name.name.to_string(),
+                exported: name.name.to_string(),
+            });
+        }
+
+        Declaration::ClassDeclaration(class) => {
+            let name = class
+                .id
+                .as_ref()
+                .ok_or_else(|| "Exported class has no name".to_string())?;
+
+            exports.push(Export::Named {
+                local: name.name.to_string(),
+                exported: name.name.to_string(),
+            });
+        }
+
+        Declaration::VariableDeclaration(declaration) => {
+            for declarator in declaration.declarations.iter() {
+                let name = match &declarator.id {
+                    oxc_ast::ast::BindingPattern::BindingIdentifier(identifier) => {
+                        identifier.name.to_string()
+                    }
+
+                    _ => {
+                        return Err("Destructuring exports are not supported yet".to_string());
+                    }
+                };
+
+                exports.push(Export::Named {
+                    local: name.clone(),
+                    exported: name,
+                });
+            }
+        }
+
+        _ => {
+            return Err("Unsupported named export declaration".to_string());
+        }
+    }
+
+    Ok(())
+}
+
+fn parse_export_specifier(
+    specifier: &oxc_ast::ast::ExportSpecifier,
+    exports: &mut Vec<Export>,
+) -> Result<(), String> {
+    let local = module_export_name_to_string(&specifier.local);
+    let exported = module_export_name_to_string(&specifier.exported);
+
+    exports.push(Export::Named { local, exported });
+
+    Ok(())
+}
+
+fn module_export_name_to_string(name: &oxc_ast::ast::ModuleExportName) -> String {
+    name.name().to_string()
 }
