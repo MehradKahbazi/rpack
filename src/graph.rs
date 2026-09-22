@@ -8,15 +8,23 @@ use crate::resolver;
 use crate::transform;
 use crate::utils;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModuleState {
+    Visiting,
+    Visited,
+}
+
 #[derive(Debug)]
 pub struct ModuleGraph {
     pub modules: HashMap<String, Module>,
+    states: HashMap<String, ModuleState>,
 }
 
 impl ModuleGraph {
     pub fn new() -> Self {
         Self {
             modules: HashMap::new(),
+            states: HashMap::new(),
         }
     }
 
@@ -27,9 +35,21 @@ impl ModuleGraph {
     fn visit(&mut self, path: &Path) -> Result<(), String> {
         let id = utils::module_id(path);
 
-        if self.modules.contains_key(&id) {
+        // Module has already been completely processed.
+        if self.states.get(&id) == Some(&ModuleState::Visited) {
             return Ok(());
         }
+
+        // Module is currently being processed.
+        //
+        // Seeing it again means we have a circular dependency.
+        if self.states.get(&id) == Some(&ModuleState::Visiting) {
+            return Err(format!("Circular dependency detected at module '{}'", id));
+        }
+
+        // Mark module as currently being processed before
+        // visiting its dependencies.
+        self.states.insert(id.clone(), ModuleState::Visiting);
 
         let source = fs::read_to_string(path)
             .map_err(|error| format!("Failed to read '{}': {error}", path.display()))?;
@@ -43,6 +63,7 @@ impl ModuleGraph {
 
             let resolved_id = utils::module_id(&resolved);
 
+            // Recursively process the dependency.
             self.visit(&resolved)?;
 
             let dependency = self.modules.get(&resolved_id).ok_or_else(|| {
@@ -51,13 +72,10 @@ impl ModuleGraph {
 
             // Validate named imports.
             for imported_name in &import.named {
-                let exists = dependency.exports.iter().any(|export| {
-                    matches!(
-                        export,
-                        Export::Named(name)
-                            if name == imported_name
-                    )
-                });
+                let exists = dependency
+                    .exports
+                    .iter()
+                    .any(|export| matches!(export, Export::Named(name) if name == imported_name));
 
                 if !exists {
                     return Err(format!(
@@ -98,7 +116,10 @@ impl ModuleGraph {
             parsed.exports,
         );
 
-        self.modules.insert(id, module);
+        self.modules.insert(id.clone(), module);
+
+        // Module has now been completely processed.
+        self.states.insert(id, ModuleState::Visited);
 
         Ok(())
     }
