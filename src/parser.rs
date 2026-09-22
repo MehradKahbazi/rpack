@@ -24,7 +24,7 @@ pub fn parse(source: &str, filename: &str) -> Result<Vec<String>, String> {
     }
 
     let mut dependencies = Vec::new();
-    println!("PARSER RUNNING: {filename}");
+    // println!("PARSER RUNNING: {filename}");
 
     for statement in &result.program.body {
         // println!("STATEMENT: {:?}", statement);
