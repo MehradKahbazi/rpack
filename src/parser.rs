@@ -1,7 +1,5 @@
 use oxc_allocator::Allocator;
-use oxc_ast::ast::{
-    Declaration, ExportSpecifier, ImportDeclarationSpecifier, ModuleExportName, Statement,
-};
+use oxc_ast::ast::{Declaration, ImportDeclarationSpecifier, Statement};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 
@@ -44,7 +42,7 @@ pub fn parse(source: &str, filename: &str) -> Result<ParseResult, String> {
                 let mut named = Vec::new();
                 let mut default = None;
 
-                for specifiers in import.specifiers.iter() {
+                if let Some(specifiers) = &import.specifiers {
                     for specifier in specifiers.iter() {
                         match specifier {
                             ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
@@ -55,7 +53,10 @@ pub fn parse(source: &str, filename: &str) -> Result<ParseResult, String> {
                                 default = Some(specifier.local.name.to_string());
                             }
 
-                            ImportDeclarationSpecifier::ImportNamespaceSpecifier(_) => {}
+                            ImportDeclarationSpecifier::ImportNamespaceSpecifier(_) => {
+                                // Namespace imports do not need
+                                // export validation here.
+                            }
                         }
                     }
                 }
@@ -117,9 +118,11 @@ fn parse_export_declaration(
                 .as_ref()
                 .ok_or_else(|| "Exported function has no name".to_string())?;
 
+            let name = name.name.to_string();
+
             exports.push(Export::Named {
-                local: name.name.to_string(),
-                exported: name.name.to_string(),
+                local: name.clone(),
+                exported: name,
             });
         }
 
@@ -129,9 +132,11 @@ fn parse_export_declaration(
                 .as_ref()
                 .ok_or_else(|| "Exported class has no name".to_string())?;
 
+            let name = name.name.to_string();
+
             exports.push(Export::Named {
-                local: name.name.to_string(),
-                exported: name.name.to_string(),
+                local: name.clone(),
+                exported: name,
             });
         }
 
@@ -167,6 +172,7 @@ fn parse_export_specifier(
     exports: &mut Vec<Export>,
 ) -> Result<(), String> {
     let local = module_export_name_to_string(&specifier.local);
+
     let exported = module_export_name_to_string(&specifier.exported);
 
     exports.push(Export::Named { local, exported });
