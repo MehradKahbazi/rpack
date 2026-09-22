@@ -6,7 +6,7 @@ pub struct Dependency {
 
 #[derive(Debug)]
 pub enum Export {
-    Named(String),
+    Named { local: String, exported: String },
     Default(String),
 }
 
