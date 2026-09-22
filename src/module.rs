@@ -6,8 +6,24 @@ pub struct Dependency {
 
 #[derive(Debug)]
 pub enum Export {
-    Named { local: String, exported: String },
+    Named {
+        local: String,
+        exported: String,
+    },
+
     Default(String),
+
+    ReExport {
+        imported: String,
+        exported: String,
+        source: String,
+        resolved_id: String,
+    },
+
+    NamespaceReExport {
+        source: String,
+        resolved_id: String,
+    },
 }
 
 #[derive(Debug)]
