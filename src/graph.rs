@@ -65,6 +65,12 @@ impl ModuleGraph {
                 .join(path)
         };
 
-        absolute.to_string_lossy().replace('\\', "/")
+        let mut id = absolute.to_string_lossy().replace('\\', "/");
+
+        if let Some(stripped) = id.strip_prefix("//?/") {
+            id = stripped.to_string();
+        }
+
+        id
     }
 }
